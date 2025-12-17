@@ -2,13 +2,13 @@
 
 A LangChain-based agent that researches news topics using Tavily and LangGraph.
 
-## Features
+## 🚀 Features
 - **LangGraph Workflow**: Structured flow with loops for validation.
 - **Self-Correction**: Evaluates user input (topic, time) and generated queries using an LLM evaluator.
 - **Tavily Search**: Retrieves realtime news.
 - **Summarization**: Generates an executive summary of findings.
 
-## Setup
+## 📦 Setup
 
 1. Install dependencies:
    ```bash
@@ -24,14 +24,14 @@ A LangChain-based agent that researches news topics using Tavily and LangGraph.
    - `OPENAI_API_KEY`
    - `TAVILY_API_KEY`
 
-## Usage
+## ▶️ Usage
 
 Run the agent:
 ```bash
 python agent.py
 ```
 
-## Flow
+## 🔁 Flow
 1. **Topic Input**: Asks for a topic. Evaluator checks clarity.
 2. **Time Input**: Asks for a time period. Evaluator checks validity.
 3. **Query Generation**: Plans search queries. Evaluator checks relevance.
