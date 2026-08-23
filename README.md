@@ -21,7 +21,8 @@ A LangChain-based agent that researches news topics using Tavily and LangGraph.
    cp .env.example .env
    ```
    You need:
-   - `OPENAI_API_KEY`
+   - `OPENROUTER_API_KEY`
+   - `OPENROUTER_MODEL` (optional, defaults to `openai/gpt-4o`)
    - `TAVILY_API_KEY`
 
 ## ▶️ Usage

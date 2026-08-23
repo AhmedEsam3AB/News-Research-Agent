@@ -6,9 +6,9 @@ load_dotenv()
 
 from typing import TypedDict, List, Annotated
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
+from llm import get_llm, with_schema
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.tools.tavily_search import TavilySearchResults
+from tavily import TavilyClient
 
 from datetime import datetime
 import operator
@@ -33,7 +33,7 @@ class AgentState(TypedDict):
     loop_count: int
 
 # LLM Setup
-llm = ChatOpenAI(temperature=0.7, model="gpt-4o")
+llm = get_llm(temperature=0.7)
 
 # --- Nodes ---
 
@@ -113,12 +113,13 @@ def research_plan_node(state: AgentState):
     class Queries(TypedDict):
         queries: List[str]
         
-    query_gen = llm.with_structured_output(Queries)
+    query_gen = with_schema(llm, Queries)
     try:
         result = query_gen.invoke(messages)
         queries = result["queries"]
-    except:
+    except Exception as e:
         # Fallback
+        print(f"[!] Query generation failed ({e}); using a basic query.")
         queries = [f"{topic} {time_period} news"]
         
     # Validation step (internal)
@@ -136,18 +137,15 @@ def generate_node(state: AgentState):
     queries = state["search_queries"]
     print(f"[*] Searching Tavily for: {queries}")
     
-    tool = TavilySearchResults(max_results=3)
+    client = TavilyClient()
     all_results = []
-    
+
     for q in queries:
         try:
-            res = tool.invoke({"query": q})
-            # Tavily returns list of {url, content, ...}
-            if isinstance(res, list):
-                for item in res:
-                    all_results.append(f"Source: {item.get('url')}\nContent: {item.get('content')}\n")
-            else:
-                all_results.append(str(res))
+            res = client.search(query=q, max_results=3)
+            # Tavily returns {"results": [{url, content, ...}, ...]}
+            for item in res.get("results", []):
+                all_results.append(f"Source: {item.get('url')}\nContent: {item.get('content')}\n")
         except Exception as e:
             print(f"[!] Error searching {q}: {e}")
             
