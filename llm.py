@@ -1,3 +1,6 @@
+# Lets the `str | None` annotations below work on Python 3.9 as well.
+from __future__ import annotations
+
 import json
 import os
 import re

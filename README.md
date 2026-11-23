@@ -12,7 +12,40 @@ OpenRouter exposes (OpenAI, Anthropic, Google, Llama, …) by changing one envir
 
 ## How it works
 
-The agent is a LangGraph state machine with five nodes and one feedback loop:
+There are two modes, both built as LangGraph state machines.
+
+### Agent mode (default)
+
+A research agent gathers the news. It has two tools and decides for itself which to call, with
+what inputs, and when it has enough:
+
+```mermaid
+graph TD
+    A[plan] --> B[research_brief]
+    B --> C[research_agent]
+    C -- calls a tool --> T[tools]
+    T --> C
+    C -- has enough --> D[collect]
+    D --> E[create]
+    E --> F[search_critique]
+    F -- satisfactory --> G([END])
+    F -- needs work --> B
+```
+
+| Node | What it does |
+| --- | --- |
+| `plan` | Same as the baseline below. |
+| `research_brief` | Gives the agent its task (topic, time period, today's date). On a retry it passes the critique feedback instead. |
+| `research_agent` | The model chooses the next action: `search_news(query, start_date, end_date)`, a Tavily news search limited to that date range, or `read_article(url)` for an article's full text. It can also decide to stop. It gets up to **6 tool turns** per round, then must stop. |
+| `tools` | Runs the tool calls the agent asked for and returns the results to it. |
+| `collect` | Gathers every tool result (minus empty or failed ones) for `create`. |
+| `create`, `search_critique` | Same as the baseline below. When the critique fails, the feedback goes back to the agent, which can research further. |
+
+Agent mode needs a model that supports tool calling (see Troubleshooting).
+
+### Baseline mode (`--baseline`)
+
+The original fixed workflow: five nodes, one feedback loop, and the model never chooses an action.
 
 ```mermaid
 graph TD
@@ -51,7 +84,7 @@ which breaks LangChain's `with_structured_output`. [llm.py](llm.py) wraps this i
 
 ## Requirements
 
-- Python 3.10+ (the code uses `str | None` syntax)
+- Python 3.9+
 - An [OpenRouter API key](https://openrouter.ai/keys)
 - A [Tavily API key](https://app.tavily.com) (the free tier is enough to try it)
 
@@ -86,10 +119,16 @@ cp .env.example .env
 python agent.py
 ```
 
-The agent is interactive; it asks for what it needs:
+To run the original fixed workflow instead (kept as a baseline for comparison):
+
+```bash
+python agent.py --baseline
+```
+
+Both modes are interactive and ask for what they need. Example from a baseline run:
 
 ```
-Starting News Research Agent (Refactored Flow)...
+Starting News Research (baseline fixed workflow)...
 
 --- Step: PLAN ---
 
@@ -112,23 +151,28 @@ Starting News Research Agent (Refactored Flow)...
 ...
 ```
 
+In agent mode, the RESEARCH PLAN and GENERATE steps are replaced by RESEARCH BRIEF and the
+agent's tool calls, printed as `[*] Agent calls search_news({...})`.
+
 ---
 
 ## Project structure
 
 | File | Contents |
 | --- | --- |
-| [agent.py](agent.py) | State definition, the five graph nodes, edges, and the CLI entry point. |
+| [agent.py](agent.py) | State definition, the nodes and tools for both modes, the two graphs, and the CLI entry point. |
 | [evaluator.py](evaluator.py) | The four LLM evaluators (`evaluate_topic`, `evaluate_time_period`, `evaluate_queries`, `evaluate_critique`), all returning a Pydantic `EvaluationResult` of `is_valid` / `feedback` / `corrected_value`. Runs at `temperature=0`. |
 | [llm.py](llm.py) | OpenRouter-backed `ChatOpenAI` factory and the `with_schema` structured-output shim. |
 | [.env.example](.env.example) | Template for the environment variables above. |
 
 ## Notes and limitations
 
-- **Interactive only.** Topic and time period come from `input()`; there are no CLI flags, and
-  the report is printed to stdout rather than saved.
-- **Query validation is advisory.** If `evaluate_queries` flags a problem, the agent prints a
-  warning and searches anyway.
+- **Interactive only.** Topic and time period come from `input()`; the only CLI flag is
+  `--baseline`, and the report is printed to stdout rather than saved.
+- **Query validation is advisory (baseline).** If `evaluate_queries` flags a problem, the
+  baseline prints a warning and searches anyway. Agent mode has no query check.
+- **Agent runs vary.** In agent mode, the number of searches, and so the run time and cost,
+  changes from run to run.
 - **Retry budget is fixed** at 2 critique loops before the current draft is accepted.
 - **Search failures degrade gracefully.** A failed Tavily call is logged and skipped; if every
   query fails, the summary is built from `"No results found."` — which the critique node then
@@ -143,5 +187,6 @@ Starting News Research Agent (Refactored Flow)...
 | --- | --- |
 | `OPENROUTER_API_KEY is not set` | Create `.env` from `.env.example` and add your key. |
 | `... could not produce JSON matching the schema` | The chosen model is too weak for structured output — switch `OPENROUTER_MODEL` to a stronger one. |
+| `Agent mode needs a model that supports tool calling` | Switch `OPENROUTER_MODEL` to a model that lists tool support on OpenRouter, or run with `--baseline`. |
 | Empty or truncated reports | Raise or unset `OPENROUTER_MAX_TOKENS`. |
 | Tavily errors printed per query | Check `TAVILY_API_KEY` and your remaining free-tier credits. |
