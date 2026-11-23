@@ -106,7 +106,7 @@ cp .env.example .env
 | --- | --- | --- | --- |
 | `OPENROUTER_API_KEY` | ✅ | — | OpenRouter API key. The agent raises a clear error at startup if it's missing. |
 | `TAVILY_API_KEY` | ✅ | — | Tavily search key, read automatically by `TavilyClient()`. |
-| `OPENROUTER_MODEL` | — | — | The [model slug](https://openrouter.ai/models) to run against, e.g. `anthropic/claude-sonnet-4.5`, `google/gemini-2.5-pro`. |
+| `OPENROUTER_MODEL` | — | `nvidia/nemotron-3.5-super-vl:free` | The [model slug](https://openrouter.ai/models) to run against. The default is free and supports tool calling, which agent mode needs. |
 | `OPENROUTER_MAX_TOKENS` | — | model default | Caps completion length. Useful on free accounts that can't afford a model's default `max_tokens`. |
 | `OPENROUTER_SITE_URL` | — | — | Sent as `HTTP-Referer` for OpenRouter's app rankings. |
 | `OPENROUTER_APP_NAME` | — | — | Sent as `X-Title` for OpenRouter's app rankings. |
@@ -180,6 +180,9 @@ agent's tool calls, printed as `[*] Agent calls search_news({...})`.
 - **Cost.** A single run makes several LLM calls (input evaluation, query generation, query
   validation, summarization, critique) plus up to two more full loops. Pick a cheap model slug
   and set `OPENROUTER_MAX_TOKENS` if that matters.
+- **Free default model.** It costs nothing, but OpenRouter rate-limits free models, so a long
+  agent run can hit the daily cap. Free endpoints may also log prompts or use them for training.
+  Don't send anything confidential, and switch to a paid model for client work.
 
 ## Troubleshooting
 
