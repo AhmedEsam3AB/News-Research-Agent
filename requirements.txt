@@ -4,4 +4,4 @@ langchain-openai
 langgraph
 tavily-python
 python-dotenv
-streamlit>=1.40
+streamlit>=1.50

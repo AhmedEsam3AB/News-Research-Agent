@@ -1,0 +1,26 @@
+# Briefleaf look and feel: light theme with green accents.
+
+[theme]
+base = "light"
+primaryColor = "#2b8a3e"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f1f8f3"
+textColor = "#1d2b22"
+linkColor = "#2b8a3e"
+borderColor = "#d3e9d8"
+showWidgetBorder = true
+baseRadius = "0.6rem"
+buttonRadius = "0.6rem"
+greenColor = "#2f9e44"
+greenBackgroundColor = "#ebfbee"
+
+[theme.sidebar]
+backgroundColor = "#eaf6ed"
+secondaryBackgroundColor = "#ffffff"
+borderColor = "#cfe6d4"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

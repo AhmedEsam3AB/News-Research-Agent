@@ -49,6 +49,10 @@ def save_chat(chat: dict) -> None:
     _write_json(CHATS_DIR / f"{chat['id']}.json", chat)
 
 
+def delete_chat(chat_id: str) -> None:
+    (CHATS_DIR / f"{chat_id}.json").unlink(missing_ok=True)
+
+
 def list_chats() -> list:
     """Every saved chat, newest first."""
     chats = [_read_json(p, None) for p in CHATS_DIR.glob("*.json")]

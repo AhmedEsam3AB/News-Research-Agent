@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 232 64" width="232" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#69db7c"/>
+      <stop offset="1" stop-color="#2b8a3e"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)"/>
+  <path d="M16 48 C16 28 28 16 48 16 C48 36 36 48 16 48 Z" fill="#ffffff"/>
+  <g stroke="#2f9e44" stroke-width="2.6" stroke-linecap="round" fill="none">
+    <path d="M19 45 L42 22"/>
+    <path d="M26 38 L26 30 M26 38 L34 38"/>
+    <path d="M33 31 L33 24 M33 31 L40 31"/>
+  </g>
+  <text x="78" y="43" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="31" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="#1f3d2b">Brief</tspan><tspan fill="#2b8a3e">leaf</tspan>
+  </text>
+</svg>
