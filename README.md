@@ -31,6 +31,13 @@ Run the agent:
 python agent.py
 ```
 
+Run the original fixed workflow instead (3 queries, top 3 results each), kept as a baseline for comparison:
+```bash
+python agent.py --baseline
+```
+
+In agent mode, Query Generation and Search are replaced by a research agent. It has two tools: `search_news` (Tavily news search with a date range) and `read_article` (full article text). It decides what to search and when it has enough, up to 6 tool turns per round. Critique feedback goes back to the agent.
+
 ## Flow
 1. **Topic Input**: Asks for a topic. Evaluator checks clarity.
 2. **Time Input**: Asks for a time period. Evaluator checks validity.

@@ -1,14 +1,20 @@
 import os
 import sys
+import argparse
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from typing import TypedDict, List, Annotated
 from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
 from langchain_community.tools.tavily_search import TavilySearchResults
+from tavily import TavilyClient
 
 from datetime import datetime
 import operator
@@ -31,6 +37,10 @@ class AgentState(TypedDict):
     critique_feedback: str
     is_satisfactory: bool
     loop_count: int
+
+    # Research agent (agent mode only)
+    messages: Annotated[list, add_messages]
+    tool_rounds: int
 
 # LLM Setup
 llm = ChatOpenAI(temperature=0.7, model="gpt-4o")
@@ -208,6 +218,124 @@ def search_critique_node(state: AgentState):
             "loop_count": loop_count + 1
         }
 
+# --- Research Agent (agent mode) ---
+# Replaces RESEARCH_PLAN + GENERATE with a tool-calling loop: the model decides
+# what to search, whether to read an article in full, and when it has enough.
+
+MAX_TOOL_ROUNDS = 6        # tool-calling turns allowed per research round
+ARTICLE_CHAR_LIMIT = 4000  # cap on text returned by read_article
+TOOL_MISSES = ("Search failed", "Could not read", "No results found")
+
+_tavily = None
+
+def _tavily_client():
+    global _tavily
+    if _tavily is None:
+        _tavily = TavilyClient()
+    return _tavily
+
+@tool(parse_docstring=True)
+def search_news(query: str, start_date: str, end_date: str) -> str:
+    """Search news articles published between start_date and end_date.
+
+    Args:
+        query: What to search for.
+        start_date: Earliest publish date, in YYYY-MM-DD format.
+        end_date: Latest publish date, in YYYY-MM-DD format.
+    """
+    try:
+        res = _tavily_client().search(
+            query, topic="news", start_date=start_date, end_date=end_date, max_results=5
+        )
+    except Exception as e:
+        return f"Search failed for '{query}': {e}"
+    items = res.get("results", [])
+    if not items:
+        return f"No results found for '{query}'."
+    return "\n---\n".join(
+        f"Source: {i.get('url')}\nPublished: {i.get('published_date', 'unknown')}\n"
+        f"Title: {i.get('title')}\nContent: {i.get('content')}"
+        for i in items
+    )
+
+@tool(parse_docstring=True)
+def read_article(url: str) -> str:
+    """Fetch the full text of an article when its search snippet is not enough.
+
+    Args:
+        url: The article URL, taken from a search_news result.
+    """
+    try:
+        res = _tavily_client().extract(urls=[url])
+    except Exception as e:
+        return f"Could not read {url}: {e}"
+    items = res.get("results", [])
+    if not items or not items[0].get("raw_content"):
+        return f"Could not read {url}."
+    return f"Source: {url}\nContent: {items[0]['raw_content'][:ARTICLE_CHAR_LIMIT]}"
+
+RESEARCH_TOOLS = [search_news, read_article]
+research_llm = llm.bind_tools(RESEARCH_TOOLS)
+# Used once the step limit is hit: same tools visible, but the model may not call them.
+wrap_up_llm = llm.bind_tools(RESEARCH_TOOLS, tool_choice="none")
+
+def research_brief_node(state: AgentState):
+    """
+    RESEARCH_BRIEF: Gives the agent its task, or the editor's feedback on a retry.
+    """
+    print("\n--- Step: RESEARCH BRIEF ---")
+    if state.get("messages"):
+        feedback = state.get("critique_feedback", "")
+        print(f"[*] Passing critique feedback to the agent: {feedback}")
+        messages = [HumanMessage(content=(
+            f"An editor rejected the summary built from your research: {feedback}\n"
+            "Research further to fix this, then stop."
+        ))]
+    else:
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        messages = [
+            SystemMessage(content=(
+                f"You are a news research agent. Today's date is {current_date}.\n"
+                "Gather news coverage of the user's topic within their time period, using your tools.\n"
+                "- Convert the time period into start_date and end_date (YYYY-MM-DD) and pass them to every search_news call.\n"
+                "- Search from several angles. Look at what each search returns before deciding what to search next.\n"
+                "- Use read_article when a snippet is too thin to understand the story.\n"
+                "- Stop calling tools once you have enough coverage of the period, then reply with a short list of the main stories you found."
+            )),
+            HumanMessage(content=f"Topic: {state['topic']}\nTime period: {state['time_period']}"),
+        ]
+    return {"messages": messages, "tool_rounds": 0}
+
+def research_agent_node(state: AgentState):
+    """
+    RESEARCH_AGENT: The model decides whether to search, read an article, or stop.
+    """
+    rounds = state.get("tool_rounds", 0)
+    at_limit = rounds >= MAX_TOOL_ROUNDS
+    if at_limit:
+        print(f"[!] Step limit ({MAX_TOOL_ROUNDS}) reached. Telling the agent to stop.")
+        response = wrap_up_llm.invoke(state["messages"])
+    else:
+        response = research_llm.invoke(state["messages"])
+
+    if response.tool_calls:
+        for call in response.tool_calls:
+            print(f"[*] Agent calls {call['name']}({call['args']})")
+    elif not at_limit:
+        print("[*] Agent decided it has enough. Moving to summary.")
+    return {"messages": [response], "tool_rounds": rounds + 1}
+
+def collect_node(state: AgentState):
+    """
+    COLLECT: Hands everything the agent's tools returned to CREATE.
+    """
+    found = [
+        m.content for m in state["messages"]
+        if isinstance(m, ToolMessage) and not m.content.startswith(TOOL_MISSES)
+    ]
+    print(f"[*] Collected {len(found)} tool results for the summary.")
+    return {"search_results": "\n---\n".join(found) or "No results found."}
+
 # --- Conditional Edges ---
 
 def check_satisfaction(state: AgentState):
@@ -215,35 +343,85 @@ def check_satisfaction(state: AgentState):
         return END
     return "research_plan" # Loop back to query generation
 
+def check_satisfaction_agent(state: AgentState):
+    if state["is_satisfactory"]:
+        return END
+    return "research_brief" # Loop back to the agent with the critique feedback
+
+def route_research(state: AgentState):
+    if state["messages"][-1].tool_calls:
+        return "tools"
+    return "collect"
+
 # --- Graph Construction ---
 
-workflow = StateGraph(AgentState)
+def build_workflow_graph():
+    """Baseline: the original fixed workflow (always 3 queries, top 3 results each)."""
+    workflow = StateGraph(AgentState)
 
-# Add Nodes
-workflow.add_node("plan", plan_node)
-workflow.add_node("research_plan", research_plan_node)
-workflow.add_node("generate", generate_node)
-workflow.add_node("create", create_node)
-workflow.add_node("search_critique", search_critique_node)
+    # Add Nodes
+    workflow.add_node("plan", plan_node)
+    workflow.add_node("research_plan", research_plan_node)
+    workflow.add_node("generate", generate_node)
+    workflow.add_node("create", create_node)
+    workflow.add_node("search_critique", search_critique_node)
 
-# Set Entry
-workflow.set_entry_point("plan")
+    # Set Entry
+    workflow.set_entry_point("plan")
 
-# Add Edges
-workflow.add_edge("plan", "research_plan")
-workflow.add_edge("research_plan", "generate")
-workflow.add_edge("generate", "create")
-workflow.add_edge("create", "search_critique")
+    # Add Edges
+    workflow.add_edge("plan", "research_plan")
+    workflow.add_edge("research_plan", "generate")
+    workflow.add_edge("generate", "create")
+    workflow.add_edge("create", "search_critique")
 
-# Conditional Edge from Critique
-workflow.add_conditional_edges("search_critique", check_satisfaction)
+    # Conditional Edge from Critique
+    workflow.add_conditional_edges("search_critique", check_satisfaction)
 
-app = workflow.compile()
+    return workflow.compile()
+
+def build_agent_graph():
+    """Agent: the model chooses its own searches and decides when to stop."""
+    graph = StateGraph(AgentState)
+
+    graph.add_node("plan", plan_node)
+    graph.add_node("research_brief", research_brief_node)
+    graph.add_node("research_agent", research_agent_node)
+    graph.add_node("tools", ToolNode(RESEARCH_TOOLS))
+    graph.add_node("collect", collect_node)
+    graph.add_node("create", create_node)
+    graph.add_node("search_critique", search_critique_node)
+
+    graph.set_entry_point("plan")
+
+    graph.add_edge("plan", "research_brief")
+    graph.add_edge("research_brief", "research_agent")
+    graph.add_conditional_edges("research_agent", route_research, ["tools", "collect"])
+    graph.add_edge("tools", "research_agent")
+    graph.add_edge("collect", "create")
+    graph.add_edge("create", "search_critique")
+    graph.add_conditional_edges("search_critique", check_satisfaction_agent, ["research_brief", END])
+
+    return graph.compile()
+
+# Worst case per research round: brief + 7 agent turns + 6 tool runs + collect + create + critique = 17 steps.
+# Three rounds (first try + 2 retries) plus PLAN is 52, so 100 leaves headroom.
+RECURSION_LIMIT = 100
 
 if __name__ == "__main__":
-    print("Starting News Research Agent (Refactored Flow)...")
-    result = app.invoke({})
-    
+    parser = argparse.ArgumentParser(description="Research a news topic and print an executive summary.")
+    parser.add_argument("--baseline", action="store_true",
+                        help="Run the original fixed workflow instead of the research agent.")
+    args = parser.parse_args()
+
+    if args.baseline:
+        print("Starting News Research (baseline fixed workflow)...")
+        app = build_workflow_graph()
+    else:
+        print("Starting News Research Agent...")
+        app = build_agent_graph()
+    result = app.invoke({}, {"recursion_limit": RECURSION_LIMIT})
+
     print("\n" + "="*40)
     print("       FINAL RESEARCH REPORT       ")
     print("="*40)
