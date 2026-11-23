@@ -115,6 +115,35 @@ cp .env.example .env
 
 ## Usage
 
+### Web app (Briefleaf)
+
+```bash
+streamlit run app.py
+```
+
+It opens in your browser as **Briefleaf**.
+
+- **Topics screen.** Add a topic, choose a time period (Today, Last week, Last month, or Custom
+  dates) and press **Save topic**. The topic checker runs at save time and fixes typos. Each
+  saved topic is a card with **Run**, delete, and when it last ran. Relative periods are worked
+  out on the day you run them.
+- **Watching the agent work.** Each step appears as it happens:
+  - the task handed to the agent
+  - every search it chooses (query and dates)
+  - the articles it finds and any it reads in full
+  - "Research complete" when it stops searching
+  - the summary and the editor check, including any retry
+- **Follow-up chat.** When the report is ready, ask follow-up questions underneath it. The same
+  agent answers. It works from the report and sources, and searches again only when it needs
+  to. Those steps show live too.
+- **Previous chats.** The sidebar lists every run, one line each, with a delete button. Each chat
+  keeps its report, follow-ups, and the steps behind every answer. They're stored as JSON in
+  `data/` (gitignored).
+
+The logo is in `assets/`, and the green theme is in `.streamlit/config.toml`.
+
+### Command line
+
 ```bash
 python agent.py
 ```
@@ -160,15 +189,22 @@ agent's tool calls, printed as `[*] Agent calls search_news({...})`.
 
 | File | Contents |
 | --- | --- |
-| [agent.py](agent.py) | State definition, the nodes and tools for both modes, the two graphs, and the CLI entry point. |
+| [agent.py](agent.py) | State definition, the nodes and tools for both modes, the graphs (baseline, agent, follow-up chat), and the CLI entry point. |
+| [app.py](app.py) | Briefleaf, the Streamlit web app: Topics screen, the live step-by-step view of the agent, follow-up chat, previous chats. |
+| [assets/](assets) | Briefleaf logo (wordmark and mark as SVG, mark as PNG for the browser tab and chat avatar). |
+| [.streamlit/config.toml](.streamlit/config.toml) | Theme: light, with green accents. |
+| [storage.py](storage.py) | Saves topics and chats as JSON files in `data/`. |
 | [evaluator.py](evaluator.py) | The four LLM evaluators (`evaluate_topic`, `evaluate_time_period`, `evaluate_queries`, `evaluate_critique`), all returning a Pydantic `EvaluationResult` of `is_valid` / `feedback` / `corrected_value`. Runs at `temperature=0`. |
 | [llm.py](llm.py) | OpenRouter-backed `ChatOpenAI` factory and the `with_schema` structured-output shim. |
 | [.env.example](.env.example) | Template for the environment variables above. |
 
 ## Notes and limitations
 
-- **Interactive only.** Topic and time period come from `input()`; the only CLI flag is
-  `--baseline`, and the report is printed to stdout rather than saved.
+- **Command line is interactive only.** Topic and time period come from `input()`; the only CLI
+  flag is `--baseline`, and the report is printed to stdout rather than saved. The web app saves
+  topics and chats.
+- **Web app runs one thing at a time.** Clicking elsewhere in the app during a run stops that
+  run. It's a local, single-user app with no login.
 - **Query validation is advisory (baseline).** If `evaluate_queries` flags a problem, the
   baseline prints a warning and searches anyway. Agent mode has no query check.
 - **Agent runs vary.** In agent mode, the number of searches, and so the run time and cost,

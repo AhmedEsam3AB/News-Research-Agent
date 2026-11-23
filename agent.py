@@ -35,6 +35,7 @@ class AgentState(TypedDict):
     # Validation/Critique
     critique_feedback: str
     is_satisfactory: bool
+    critique_passed: bool  # False when the draft was accepted only because retries ran out
     loop_count: int
 
     # Research agent (agent mode only)
@@ -200,17 +201,18 @@ def search_critique_node(state: AgentState):
     
     if critique.is_valid:
         print("[*] Critique Passed: Report is satisfactory.")
-        return {"is_satisfactory": True, "critique_feedback": ""}
+        return {"is_satisfactory": True, "critique_passed": True, "critique_feedback": ""}
     else:
         print(f"[!] Critique Failed: {critique.feedback}")
-        
+
         # Check Max Loops
         if loop_count >= 2:
             print("[!] Max retries reached. Accepting best effort.")
-            return {"is_satisfactory": True, "critique_feedback": ""}
-            
+            return {"is_satisfactory": True, "critique_passed": False, "critique_feedback": critique.feedback}
+
         return {
-            "is_satisfactory": False, 
+            "is_satisfactory": False,
+            "critique_passed": False,
             "critique_feedback": critique.feedback,
             "loop_count": loop_count + 1
         }
@@ -325,7 +327,7 @@ def research_agent_node(state: AgentState):
         for call in response.tool_calls:
             print(f"[*] Agent calls {call['name']}({call['args']})")
     elif not at_limit:
-        print("[*] Agent decided it has enough. Moving to summary.")
+        print("[*] Agent decided it has enough.")
     return {"messages": [response], "tool_rounds": rounds + 1}
 
 def collect_node(state: AgentState):
@@ -356,6 +358,29 @@ def route_research(state: AgentState):
         return "tools"
     return "collect"
 
+def route_followup(state: AgentState):
+    if state["messages"][-1].tool_calls:
+        return "tools"
+    return END
+
+# --- Follow-up chat (used by the GUI) ---
+# After a report, the PR specialist can ask questions. The same agent node and
+# tools answer them: the agent uses the report first and searches again only if needed.
+
+FOLLOWUP_SOURCES_LIMIT = 15000  # characters of collected sources given to the follow-up agent
+
+def followup_system_message(topic: str, time_period: str, summary: str, search_results: str):
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    return SystemMessage(content=(
+        f"You are a news research agent helping a PR specialist. Today's date is {current_date}.\n"
+        f"You researched '{topic}' for the period {time_period} and wrote the report below.\n"
+        "Answer the specialist's follow-up questions. Use the report and sources first. "
+        "Call search_news or read_article only when they don't cover the question; "
+        "search the same period unless the question asks for another. "
+        "Keep answers short and cite source URLs.\n\n"
+        f"REPORT:\n{summary}\n\nSOURCES:\n{search_results[:FOLLOWUP_SOURCES_LIMIT]}"
+    ))
+
 # --- Graph Construction ---
 
 def build_workflow_graph():
@@ -383,11 +408,16 @@ def build_workflow_graph():
 
     return workflow.compile()
 
-def build_agent_graph():
-    """Agent: the model chooses its own searches and decides when to stop."""
+def build_agent_graph(interactive: bool = True):
+    """Agent: the model chooses its own searches and decides when to stop.
+
+    interactive=False skips PLAN (terminal input). The caller must then pass
+    topic, time_period and loop_count=0 in the initial state, as the GUI does.
+    """
     graph = StateGraph(AgentState)
 
-    graph.add_node("plan", plan_node)
+    if interactive:
+        graph.add_node("plan", plan_node)
     graph.add_node("research_brief", research_brief_node)
     graph.add_node("research_agent", research_agent_node)
     graph.add_node("tools", ToolNode(RESEARCH_TOOLS))
@@ -395,15 +425,30 @@ def build_agent_graph():
     graph.add_node("create", create_node)
     graph.add_node("search_critique", search_critique_node)
 
-    graph.set_entry_point("plan")
-
-    graph.add_edge("plan", "research_brief")
+    if interactive:
+        graph.set_entry_point("plan")
+        graph.add_edge("plan", "research_brief")
+    else:
+        graph.set_entry_point("research_brief")
     graph.add_edge("research_brief", "research_agent")
     graph.add_conditional_edges("research_agent", route_research, ["tools", "collect"])
     graph.add_edge("tools", "research_agent")
     graph.add_edge("collect", "create")
     graph.add_edge("create", "search_critique")
     graph.add_conditional_edges("search_critique", check_satisfaction_agent, ["research_brief", END])
+
+    return graph.compile()
+
+def build_followup_graph():
+    """Follow-up chat: the agent answers one question, calling tools only if it needs to."""
+    graph = StateGraph(AgentState)
+
+    graph.add_node("research_agent", research_agent_node)
+    graph.add_node("tools", ToolNode(RESEARCH_TOOLS))
+
+    graph.set_entry_point("research_agent")
+    graph.add_conditional_edges("research_agent", route_followup, ["tools", END])
+    graph.add_edge("tools", "research_agent")
 
     return graph.compile()
 
