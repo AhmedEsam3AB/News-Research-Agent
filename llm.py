@@ -16,9 +16,11 @@ from pydantic import ValidationError
 # as long as we point base_url at OpenRouter and use an OpenRouter key.
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Any OpenRouter model slug, e.g. "anthropic/claude-sonnet-4.5",
-# "google/gemini-2.5-pro", "meta-llama/llama-3.3-70b-instruct".
-DEFAULT_MODEL = "openai/gpt-4o"
+# Default: a free model that supports tool calling (needed for agent mode),
+# tool_choice and structured output. Override with OPENROUTER_MODEL, using any
+# slug from https://openrouter.ai/models. Free models get retired often; if
+# this one disappears, pick another ":free" model that lists "tools".
+DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl:free"
 
 
 def get_llm(temperature: float = 0.7, model: str | None = None) -> ChatOpenAI:
@@ -42,7 +44,7 @@ def get_llm(temperature: float = 0.7, model: str | None = None) -> ChatOpenAI:
     max_tokens = os.getenv("OPENROUTER_MAX_TOKENS")
 
     return ChatOpenAI(
-        model=model or os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL),
+        model=model or os.getenv("OPENROUTER_MODEL") or DEFAULT_MODEL,
         temperature=temperature,
         max_tokens=int(max_tokens) if max_tokens else None,
         base_url=OPENROUTER_BASE_URL,
