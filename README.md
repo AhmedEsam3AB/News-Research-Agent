@@ -110,6 +110,7 @@ cp .env.example .env
 | `OPENROUTER_MAX_TOKENS` | — | model default | Caps completion length. Useful on free accounts that can't afford a model's default `max_tokens`. |
 | `OPENROUTER_SITE_URL` | — | — | Sent as `HTTP-Referer` for OpenRouter's app rankings. |
 | `OPENROUTER_APP_NAME` | — | — | Sent as `X-Title` for OpenRouter's app rankings. |
+| `APP_PASSWORD` | — | — | Web app only. When set, Briefleaf asks for this password before showing anything. Set it on any public deployment. |
 
 `.env` is gitignored — keep your keys out of version control.
 
@@ -184,6 +185,37 @@ In agent mode, the RESEARCH PLAN and GENERATE steps are replaced by RESEARCH BRI
 agent's tool calls, printed as `[*] Agent calls search_news({...})`.
 
 ---
+
+## Deploying to Streamlit Community Cloud
+
+Briefleaf runs on [Streamlit Community Cloud](https://share.streamlit.io) for free, straight from
+this GitHub repo.
+
+1. Sign in at [share.streamlit.io](https://share.streamlit.io) with GitHub and choose **Create app**,
+   then deploy a public app from GitHub.
+2. Repository: this repo. Branch: `main`. Main file path: `app.py`.
+3. Open **Advanced settings**. Pick Python 3.12, and paste your settings into **Secrets** in TOML
+   format:
+
+   ```toml
+   OPENROUTER_API_KEY = "sk-or-v1-..."
+   TAVILY_API_KEY = "tvly-..."
+   OPENROUTER_MODEL = "nvidia/nemotron-3.5-super-vl:free"
+   APP_PASSWORD = "choose-a-password"
+   ```
+
+   Top-level secrets reach the app as environment variables, so the code reads them the same way
+   it reads `.env` locally.
+4. **Deploy.** The first build installs `requirements.txt` and takes a few minutes. The theme comes
+   from `.streamlit/config.toml`.
+
+Things to know about the hosted app:
+
+- **Set `APP_PASSWORD`.** Without it, anyone with the link can run the agent on your API keys.
+- **Everyone shares one set of topics and chats.** They're saved as files on the server, which
+  Community Cloud wipes when the app restarts or wakes from sleep. Fine for demos; use a
+  database for real use.
+- **Apps sleep when unused.** The first visit after a quiet spell takes a moment to wake the app.
 
 ## Project structure
 
