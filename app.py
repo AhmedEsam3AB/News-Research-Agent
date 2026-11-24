@@ -8,6 +8,8 @@ follow-up questions in the chat. Previous chats are listed in the sidebar.
 """
 from __future__ import annotations
 
+import hmac
+import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -42,6 +44,44 @@ st.markdown(
     </style>""",
     unsafe_allow_html=True,
 )
+
+
+def setting(name: str) -> str:
+    """A setting from the environment (.env locally) or from Secrets on Streamlit Community Cloud."""
+    value = os.getenv(name)
+    if value:
+        return value
+    try:
+        return str(st.secrets.get(name, "") or "")
+    except Exception:  # no secrets file, which is normal when running locally
+        return ""
+
+
+def require_password() -> None:
+    """Ask for APP_PASSWORD before showing anything. Skipped when no password is set.
+
+    On a public deployment this stops strangers from spending your OpenRouter and Tavily quota.
+    """
+    expected = setting("APP_PASSWORD")
+    if not expected or st.session_state.get("signed_in"):
+        return
+    _, middle, _ = st.columns([1, 1.2, 1])
+    with middle:
+        st.write("")
+        st.image(LOGO, width=220)
+        st.markdown("#### Sign in")
+        with st.form("sign_in"):
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Sign in", type="primary", width="stretch")
+        if submitted:
+            if hmac.compare_digest(password.encode(), expected.encode()):
+                st.session_state.signed_in = True
+                st.rerun()
+            st.error("That password isn't right.")
+    st.stop()
+
+
+require_password()
 
 try:
     import agent
@@ -418,7 +458,8 @@ def show_topics() -> None:
     st.markdown('<div class="bl-eyebrow">Saved topics</div>', unsafe_allow_html=True)
     topics = storage.load_topics()
     if not topics:
-        st.info("No topics yet. Add the first one above.", icon=":material/eco:")
+        with st.container(border=True):
+            st.markdown(":green[:material/eco:] No topics yet. Add the first one above.")
         return
 
     chats = storage.list_chats()
