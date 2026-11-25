@@ -408,11 +408,13 @@ def build_workflow_graph():
 
     return workflow.compile()
 
-def build_agent_graph(interactive: bool = True):
+def build_agent_graph(interactive: bool = True, critique: bool = True):
     """Agent: the model chooses its own searches and decides when to stop.
 
     interactive=False skips PLAN (terminal input). The caller must then pass
     topic, time_period and loop_count=0 in the initial state, as the GUI does.
+    critique=False drops the editor check: the first draft is the report.
+    Used by eval/run_eval.py to measure what the check adds.
     """
     graph = StateGraph(AgentState)
 
@@ -423,7 +425,8 @@ def build_agent_graph(interactive: bool = True):
     graph.add_node("tools", ToolNode(RESEARCH_TOOLS))
     graph.add_node("collect", collect_node)
     graph.add_node("create", create_node)
-    graph.add_node("search_critique", search_critique_node)
+    if critique:
+        graph.add_node("search_critique", search_critique_node)
 
     if interactive:
         graph.set_entry_point("plan")
@@ -434,8 +437,11 @@ def build_agent_graph(interactive: bool = True):
     graph.add_conditional_edges("research_agent", route_research, ["tools", "collect"])
     graph.add_edge("tools", "research_agent")
     graph.add_edge("collect", "create")
-    graph.add_edge("create", "search_critique")
-    graph.add_conditional_edges("search_critique", check_satisfaction_agent, ["research_brief", END])
+    if critique:
+        graph.add_edge("create", "search_critique")
+        graph.add_conditional_edges("search_critique", check_satisfaction_agent, ["research_brief", END])
+    else:
+        graph.add_edge("create", END)
 
     return graph.compile()
 

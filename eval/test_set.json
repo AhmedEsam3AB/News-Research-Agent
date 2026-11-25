@@ -1,0 +1,15 @@
+{
+  "description": "Fixed test set for the News Research Agent. Each case is a topic a PR specialist might track, with a fixed past date window so every run asks the same question. 'no_coverage' cases use a made-up company: the right answer is to say there is little or no coverage, without inventing stories.",
+  "cases": [
+    {"id": "boeing", "topic": "Boeing", "start": "2026-11-01", "end": "2026-11-14", "kind": "company"},
+    {"id": "tesla", "topic": "Tesla", "start": "2026-11-01", "end": "2026-11-14", "kind": "company"},
+    {"id": "nike", "topic": "Nike", "start": "2026-10-01", "end": "2026-10-31", "kind": "company"},
+    {"id": "starbucks", "topic": "Starbucks", "start": "2026-10-15", "end": "2026-10-31", "kind": "company"},
+    {"id": "ryanair", "topic": "Ryanair", "start": "2026-11-08", "end": "2026-11-21", "kind": "company"},
+    {"id": "openai", "topic": "OpenAI", "start": "2026-11-15", "end": "2026-11-21", "kind": "company"},
+    {"id": "nintendo", "topic": "Nintendo", "start": "2026-11-01", "end": "2026-11-21", "kind": "company"},
+    {"id": "eu-ai-act", "topic": "EU AI Act enforcement", "start": "2026-10-01", "end": "2026-11-15", "kind": "issue"},
+    {"id": "apple-one-day", "topic": "Apple", "start": "2026-11-20", "end": "2026-11-20", "kind": "narrow_window"},
+    {"id": "fictional-recall", "topic": "Bramblecote Organic Dairy product recall", "start": "2026-11-01", "end": "2026-11-21", "kind": "no_coverage"}
+  ]
+}
